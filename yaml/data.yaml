@@ -1,5 +1,5 @@
-train: ./datasets/parallel_data/images/train/
-val: ./datasets/parallel_data/images/val/
+train: /cifs/Shares/WMGData/ROD/images/raw/train
+val: /cifs/Shares/WMGData/ROD/images/raw/train
 
 nc: 6
 names: ["Car", "Cyclist", "Pedestrian", "Tram", "Truck", "Other"]

@@ -7,6 +7,7 @@ import time
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
+import wandb
 
 import numpy as np
 import torch
@@ -448,12 +449,14 @@ def parse_opt(known=False):
     # parser.add_argument('--weights', type=str, default=ROOT / 'yolo.pt', help='initial weights path')
     # parser.add_argument('--cfg', type=str, default='', help='model.yaml path')
     parser.add_argument('--weights', type=str, default='', help='initial weights path')
+    # =============================================================================================================================
     parser.add_argument('--cfg', type=str, default='models/detect/yolov9-c_parallel.yaml', help='model.yaml path')
     parser.add_argument('--data', type=str, default=ROOT / 'yaml/data.yaml', help='dataset.yaml path')
-    parser.add_argument('--raw_dir_train', type=str, default=ROOT / 'datasets/parallel_data/raw/train/', help='raw data path')
-    parser.add_argument('--raw_dir_val', type=str, default=ROOT / 'datasets/parallel_data/raw/val/', help='raw data path')
-    parser.add_argument('--raw_dir_test', type=str, default=ROOT / 'datasets/defects/images/train/', help='raw data path')
+    parser.add_argument('--raw_dir_train', type=str, default=ROOT / '/cifs/Shares/WMGData/ROD/images/raw/train/', help='raw data path')
+    parser.add_argument('--raw_dir_val', type=str, default=ROOT / '/cifs/Shares/WMGData/ROD/images/raw/val/', help='raw data path')
+    parser.add_argument('--raw_dir_test', type=str, default=ROOT / '/cifs/Shares/WMGData/ROD/images/raw/test/', help='raw data path')
     parser.add_argument('--raw_ext', type=str, default='.raw', help='raw data ext')
+    # ==============================================================================================================================
     parser.add_argument('--hyp', type=str, default=ROOT / 'data/hyps/hyp.scratch-high.yaml', help='hyperparameters path')
     parser.add_argument('--epochs', type=int, default=250, help='total training epochs')
     parser.add_argument('--batch-size', type=int, default=4, help='total batch size for all GPUs, -1 for autobatch')
@@ -547,7 +550,21 @@ def main(opt, callbacks=Callbacks()):
 
     # Train
     if not opt.evolve:
+        # Only log one process in DDP
+        run_name = os.getenv("WANDB_RUN_NAME", opt.name)
+        project_name = os.getenv("WANDB_PROJECT", "RAW_YOLO_RESNET_PARALLEL")
+
+        if RANK in {-1, 0}:
+            wandb.init(
+                project=project_name,
+                name=run_name,
+                config=vars(opt),
+            )
+
         train(opt.hyp, opt, device, callbacks)
+
+        if RANK in {-1, 0}:
+            wandb.finish()
 
     # Evolve hyperparameters (optional)
     else:
