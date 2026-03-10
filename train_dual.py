@@ -7,6 +7,7 @@ import time
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
+import wandb
 
 import numpy as np
 import torch
@@ -535,7 +536,15 @@ def main(opt, callbacks=Callbacks()):
 
     # Train
     if not opt.evolve:
+        if RANK in {-1, 0}:
+            wandb.init(
+                project="RAW_YOLO_RESNET_PARALLEL",
+                name=os.getenv("WANDB_RUN_NAME", opt.name),
+                config=vars(opt),
+            )
         train(opt.hyp, opt, device, callbacks)
+        if RANK in {-1, 0}:
+            wandb.finish()
 
     # Evolve hyperparameters (optional)
     else:

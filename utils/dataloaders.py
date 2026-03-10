@@ -33,7 +33,7 @@ from matplotlib import pyplot as plt
 
 # Parameters
 HELP_URL = 'See https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data'
-IMG_FORMATS = 'bmp', 'dng', 'jpeg', 'jpg', 'mpo', 'png', 'tif', 'tiff', 'webp', 'pfm'  # include image suffixes
+IMG_FORMATS = 'bmp', 'dng', 'jpeg', 'jpg', 'mpo', 'png', 'tif', 'tiff', 'webp', 'pfm' , 'raw' # include image suffixes
 VID_FORMATS = 'asf', 'avi', 'gif', 'm4v', 'mkv', 'mov', 'mp4', 'mpeg', 'mpg', 'ts', 'wmv'  # include video suffixes
 LOCAL_RANK = int(os.getenv('LOCAL_RANK', -1))  # https://pytorch.org/docs/stable/elastic/run.html
 RANK = int(os.getenv('RANK', -1))
@@ -61,6 +61,22 @@ def read_raw_24b(file_path, img_shape=(1, 1, height, width), read_type=np.uint8)
     raw_data = raw_data[0::3] + raw_data[1::3] * BIT8 + raw_data[2::3] * BIT16
     raw_data = raw_data.reshape(height, width)
     return raw_data
+
+def load_image_raw(self, i):
+        f_raw = self.raw_files[i]
+        im = read_raw_24b(f_raw)
+        # im = cv2.imread(f_raw, cv2.IMREAD_UNCHANGED)  # RAW could be 1ch or 16-bit
+        assert im is not None, f'RAW image Not Found {f_raw}'
+        # If single channel, expand to HxWx1 to keep transforms generic
+        if im.ndim == 2:
+            im = im[..., None]
+        h0, w0 = im.shape[:2]
+        r = self.img_size / max(h0, w0)
+        if r != 1:
+            interp = cv2.INTER_LINEAR if (self.augment or r > 1) else cv2.INTER_AREA
+            im = im.astype(np.float32)
+            im = cv2.resize(im, (int(w0 * r), int(h0 * r)), interpolation=interp)
+            im = np.stack([im, im, im], axis=-1) # stacking to make 3 channel raw image
 
 
 def get_hash(paths):
@@ -872,40 +888,35 @@ class LoadImagesAndLabels(Dataset):
         if im is None:  # not cached in RAM
             if fn.exists():  # load npy
                 im = np.load(fn)
+                h0, w0 = im.shape[:2]  # orig hw
+                r = self.img_size / max(h0, w0)  # ratio
+                if r != 1:  # if sizes are not equal
+                    interp = cv2.INTER_LINEAR if (self.augment or r > 1) else cv2.INTER_AREA
+                    im = cv2.resize(im, (int(w0 * r), int(h0 * r)), interpolation=interp)
+            elif  f.endswith('.raw'):
+                im = read_raw_24b(f)
+                assert im is not None, f'RAW image Not Found {f}'
+                # If single channel, expand to HxWx1 to keep transforms generic
+                if im.ndim == 2:
+                    im = np.stack([im, im, im], axis=-1) # stacking to make 3 channel raw image
+                h0, w0 = im.shape[:2]
+                r = self.img_size / max(h0, w0)
+                im = im.astype(np.float32)
+                if r != 1:
+                    interp = cv2.INTER_LINEAR if (self.augment or r > 1) else cv2.INTER_AREA
+                    im = cv2.resize(im, (int(w0 * r), int(h0 * r)), interpolation=interp)
             else:  # read image
                 im = cv2.imread(f)  # BGR
                 assert im is not None, f'Image Not Found {f}'
-            h0, w0 = im.shape[:2]  # orig hw
-            r = self.img_size / max(h0, w0)  # ratio
-            if r != 1:  # if sizes are not equal
-                interp = cv2.INTER_LINEAR if (self.augment or r > 1) else cv2.INTER_AREA
-                im = cv2.resize(im, (int(w0 * r), int(h0 * r)), interpolation=interp)
+                h0, w0 = im.shape[:2]  # orig hw
+                r = self.img_size / max(h0, w0)  # ratio
+                if r != 1:  # if sizes are not equal
+                    interp = cv2.INTER_LINEAR if (self.augment or r > 1) else cv2.INTER_AREA
+                    im = cv2.resize(im, (int(w0 * r), int(h0 * r)), interpolation=interp)
             return im, (h0, w0), im.shape[:2]  # im, hw_original, hw_resized
         return self.ims[i], self.im_hw0[i], self.im_hw[i]  # im, hw_original, hw_resized
 
 
-    # Changed Imread_Raw func
-
-    def load_image_raw(self, i):
-        f_raw = self.raw_files[i]
-        im = read_raw_24b(f_raw)
-        # im = cv2.imread(f_raw, cv2.IMREAD_UNCHANGED)  # RAW could be 1ch or 16-bit
-        assert im is not None, f'RAW image Not Found {f_raw}'
-        # If single channel, expand to HxWx1 to keep transforms generic
-        if im.ndim == 2:
-            im = im[..., None]
-        h0, w0 = im.shape[:2]
-        r = self.img_size / max(h0, w0)
-        if r != 1:
-            interp = cv2.INTER_LINEAR if (self.augment or r > 1) else cv2.INTER_AREA
-            im = im.astype(np.float32)
-            im = cv2.resize(im, (int(w0 * r), int(h0 * r)), interpolation=interp)
-            im = np.stack([im, im, im], axis=-1) # stacking to make 3 channel raw image
-        # print(im[100, 200])
-        # im = im[..., np.newaxis]
-        # print(im.shape, (h0, w0), im.shape[:2])
-
-        return im, (h0, w0), im.shape[:2]
 
 
     def cache_images_to_disk(self, i):
